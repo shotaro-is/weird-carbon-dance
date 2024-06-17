@@ -1,114 +1,141 @@
-import * as THREE from "three";
+import * as THREE from "https://cdn.skypack.dev/three@0.137";
 import fragment from "./shaders/fragment.glsl";
 import vertex from "./shaders/vertex.glsl";
+import { RGBELoader } from "https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/RGBELoader";
+import { GLTFLoader } from "https://cdn.skypack.dev/three-stdlib@2.8.5/loaders/GLTFLoader";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import GUI from 'lil-gui'
 
-export default class Sketch {
-  constructor(options) {
-    this.scene = new THREE.Scene();
+// Scene and Camera
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(10, innerWidth / innerHeight, 0.1, 1000);
 
-    this.container = options.dom;
-    this.width = this.container.offsetWidth;
-    this.height = this.container.offsetHeight;
-    this.renderer = new THREE.WebGLRenderer();
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.renderer.setSize(this.width, this.height);
-    this.renderer.setClearColor(0xeeeeee, 1); 
-    // this.renderer.outputEncoding = THREE.sRGBEncoding;
+// Renderer
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.physicallyCorrectLights = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
 
-    this.container.appendChild(this.renderer.domElement);
+// Controls
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.dampingFactor = 0.05;
+controls.enableDamping = true;
+controls.enableZoom = false;
+controls.enableRotate = false;
+controls.maxAzimuthAngle = Math.PI / 6;
+controls.minAzimuthAngle = - Math.PI / 6;
+controls.maxPolarAngle = Math.PI / 2;
+controls.minPolarAngle = Math.PI / 2;
 
-    this.camera = new THREE.PerspectiveCamera(
-      70,
-      window.innerWidth / window.innerHeight,
-      0.001,
-      1000
-    );
 
-    // var frustumSize = 10;
-    // var aspect = window.innerWidth / window.innerHeight;
-    // this.camera = new THREE.OrthographicCamera( frustumSize * aspect / - 2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / - 2, -1000, 1000 );
-    this.camera.position.set(0, 0, 2);
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.time = 0;
 
-    this.isPlaying = true;
-    
-    this.addObjects();
-    this.resize();
-    this.render();
-    this.setupResize();
-    // this.settings();
-  }
+// Adjust camera to ensure the cube is visible
+camera.position.set(0, 0, 150);
+camera.lookAt(0, 0, 0)
+controls.update();
 
-  settings() {
-    let that = this;
-    this.settings = {
-      progress: 0,
-    };
-    this.gui = new GUI();
-    this.gui.add(this.settings, "progress", 0, 1, 0.01);
-  }
+// Light 
+const sunLight = new THREE.DirectionalLight(0xffffff, 0.5);
+sunLight.position.set(10, 20, 10);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 512;
+sunLight.shadow.mapSize.height = 512;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 100;
+sunLight.shadow.camera.left = -10;
+sunLight.shadow.camera.bottom = -10;
+sunLight.shadow.camera.top = 10;
+sunLight.shadow.camera.right = 10;
+scene.add(sunLight);
 
-  setupResize() {
-    window.addEventListener("resize", this.resize.bind(this));
-  }
+(async function () {
+    console.log("start")
+    let pmrem = new THREE.PMREMGenerator(renderer);
+    let envmapTexture = await new RGBELoader()
+      .setDataType(THREE.FloatType)
+      .loadAsync("https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/empty_warehouse_01_1k.hdr");
 
-  resize() {
-    this.width = this.container.offsetWidth;
-    this.height = this.container.offsetHeight;
-    this.renderer.setSize(this.width, this.height);
-    this.camera.aspect = this.width / this.height;
-    this.camera.updateProjectionMatrix();
-  }
+    let envMap = pmrem.fromEquirectangular(envmapTexture).texture;
 
-  addObjects() {
-    let that = this;
-    this.material = new THREE.ShaderMaterial({
-      extensions: {
-        derivatives: "#extension GL_OES_standard_derivatives : enable"
-      },
-      side: THREE.DoubleSide,
-      uniforms: {
-        time: { type: "f", value: 0 },
-        resolution: { type: "v4", value: new THREE.Vector4() },
-        uvRate1: {
-          value: new THREE.Vector2(1, 1)
-        }
-      },
-      // wireframe: true,
-      // transparent: true,
-      vertexShader: vertex,
-      fragmentShader: fragment
+
+    // Texture
+    let textures = {
+      mountain: await new THREE.TextureLoader().loadAsync('./mountain_1920x1080.jpg'),
+    }
+
+    console.log('texture added')
+
+    let background = new THREE.Mesh(
+      new THREE.PlaneGeometry(80, 80*1080/1920),
+      new THREE.MeshBasicMaterial({map : textures.mountain})
+    )
+
+    background.position.set(0, 0, -20);
+    scene.add(background)
+
+    // elements
+    let element_5 = ( await new GLTFLoader().loadAsync('./element_5_nc.glb')).scene.children[0];
+    let element_6 = ( await new GLTFLoader().loadAsync('./element_6_nc.glb')).scene.children[0];
+
+    console.log('ufo added')
+
+    let elementMaterial = new THREE.MeshPhysicalMaterial({
+      // envMap,
+      // envMapIntensity: 1,
+      roughness: 0.2,
+      transmission: 1,
+      thickness: 0.1,
+      // refractionRatio: 0.98,
+      // ior: 2.33
     });
 
-    this.geometry = new THREE.PlaneGeometry(1, 1, 1, 1);
+    element_5.traverse((o) => {
+      if (o.isMesh) o.material = elementMaterial;
+    })
 
-    this.plane = new THREE.Mesh(this.geometry, this.material);
-    this.scene.add(this.plane);
-  }
+    element_6.traverse((o) =>{
+      if (o.isMesh) o.material = elementMaterial;
+    })
 
-  stop() {
-    this.isPlaying = false;
-  }
+    element_5.scale.set(100 , 100, 100);
+    element_5.position.set(12, 0, 2);
+    element_5.rotation.set(Math.PI / 2,0,0);
+    element_5.updateMatrixWorld();
 
-  play() {
-    if(!this.isPlaying){
-      this.render()
-      this.isPlaying = true;
-    }
-  }
+    element_6.scale.set(200 , 100, 200);
+    element_6.position.set(-12, 0, 0);
+    element_6.rotation.set(Math.PI / 2,0,0);
+    element_6.updateMatrixWorld();
 
-  render() {
-    if (!this.isPlaying) return;
-    this.time += 0.05;
-    this.material.uniforms.time.value = this.time;
-    requestAnimationFrame(this.render.bind(this));
-    this.renderer.render(this.scene, this.camera);
-  }
-}
+    // scene.add(element_5)
+    scene.add(element_6)
+   
+    // Animation
+    let clock = new THREE.Clock();
+    let time = 0
 
-new Sketch({
-  dom: document.getElementById('webgl')
-});
+    renderer.setAnimationLoop(() => {
+      let delta = clock.getDelta();
+      time += delta*1
+      element_5.position.set(15*Math.sin(time*1), 15*Math.cos(time*1.5),)
+      element_6.position.set(-15*Math.sin(time*1), -15*Math.cos(time*1.5))
+      // element_5.rotateOnAxis(new THREE.Vector3(0, 0, 1), delta*0.3);
+      element_5.rotateOnAxis(new THREE.Vector3(0, 1, 0), delta*0.3);
+      element_6.rotateOnAxis(new THREE.Vector3(0, 0, 1), delta*0.3);
+
+
+
+      
+      controls.update();
+      renderer.render(scene, camera);
+
+      // renderer.autoClear = false;
+      // renderer.render(planeScene, planeCamera)
+      // renderer.autoClear = true;
+    });
+})();
